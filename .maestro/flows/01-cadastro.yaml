@@ -4,9 +4,31 @@ name: Cadastro de usuário e acesso autenticado
 - openLink:
     link: ${ASTRUM_MARKET_LINK}
     autoVerify: true
+- runFlow:
+    when:
+      visible: "^(Sign in|Fazer login)$"
+    commands:
+      - tapOn:
+          text: "^(Sign in|Fazer login)$"
+      - extendedWaitUntil:
+          visible: "^(Email or phone|E-mail ou telefone)$"
+          timeout: 30000
+      - tapOn:
+          text: "^(Email or phone|E-mail ou telefone)$"
+      - inputText: ${PLAY_STORE_EMAIL}
+      - tapOn:
+          text: "^(Next|Avançar|Próxima)$"
+      - extendedWaitUntil:
+          visible: "^(Enter your password|Digite sua senha)$"
+          timeout: 30000
+      - tapOn:
+          text: "^(Enter your password|Digite sua senha)$"
+      - inputText: ${PLAY_STORE_PASSWORD}
+      - tapOn:
+          text: "^(Next|Avançar|Próxima)$"
 - extendedWaitUntil:
     visible: "Astrum"
-    timeout: 60000
+    timeout: 120000
 - extendedWaitUntil:
     visible: "^(Install|Instalar|Download|Baixar|Open|Abrir)$"
     timeout: 60000

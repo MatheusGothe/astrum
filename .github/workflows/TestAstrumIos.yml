@@ -39,6 +39,12 @@ jobs:
           echo "Memory:"
           free -h
 
+      - name: Validate Play Store credentials
+        env:
+          PLAY_STORE_EMAIL: ${{ secrets.PLAY_STORE_EMAIL }}
+          PLAY_STORE_PASSWORD: ${{ secrets.PLAY_STORE_PASSWORD }}
+        run: ./scripts/validate-play-store-credentials.sh
+
       - name: Install Maestro CLI
         run: |
           START=$(date +%s)
@@ -64,6 +70,9 @@ jobs:
 
       - name: Install and boot Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PLAY_STORE_EMAIL: ${{ secrets.PLAY_STORE_EMAIL }}
+          PLAY_STORE_PASSWORD: ${{ secrets.PLAY_STORE_PASSWORD }}
         with:
           api-level: 35
           target: google_apis_playstore

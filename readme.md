@@ -4,15 +4,15 @@ O workflow manual inicia um emulador Android com Play Store, abre o link públic
 
 ## Executar no GitHub Actions
 
-Em **Actions → Astrum - Android E2E → Run workflow**, mantenha o link da Play Store que você enviou ou informe outro link público. Não é necessário configurar senha, e-mail, domínio de e-mail nem conta Google.
+Em **Actions → Astrum - Android E2E → Run workflow**, mantenha o link da Play Store que você enviou ou informe outro link público. Para permitir a instalação, configure os secrets `PLAY_STORE_EMAIL` e `PLAY_STORE_PASSWORD` em **Settings → Secrets and variables → Actions**. Use as credenciais de uma conta Google autorizada para baixar o app.
 
-O teste gera automaticamente um e-mail sintético único em `example.com` e uma senha aleatória por execução. Nenhum dos valores é exibido nos logs. Nenhuma senha de conta Google é pedida nem armazenada pelo workflow. O link informado já aponta para o package ID `app.astrum.mobile`, confirmado no código Android local; o flow usa esse package ID para abrir o app instalado.
+Antes de instalar o emulador, o workflow valida que os dois secrets existem e que o e-mail tem formato válido; mensagens de validação não mostram os valores. O Maestro usa esses secrets somente para entrar na Play Store quando ela pedir login. Separadamente, o teste gera um e-mail sintético único em `example.com` e uma senha aleatória para cadastrar no Astrum. O link informado já aponta para o package ID `app.astrum.mobile`, confirmado no código Android local.
 
 ## O que o flow faz
 
 O arquivo `.maestro/flows/01-cadastro.yaml` abre a listagem da Play Store no emulador, instala e abre o Astrum, preenche nome, e-mail, senha, sexo e país, e verifica que o cadastro chegou às abas autenticadas “Mapa Geral” e “Perfil”. A data de nascimento é opcional. O app atual autentica imediatamente e confirma o e-mail em segundo plano.
 
-O app pode pedir uma conta Google ao iniciar a Play Store ou tentar instalar. Não configuramos login Google, conforme solicitado. Se a Play Store exigir login nesse runner, a instalação falhará antes do teste de cadastro; nesse caso será necessário habilitar uma conta Google de teste no emulador ou usar outro mecanismo oficial de distribuição/instalação. O workflow não tenta contornar controles da loja.
+Conta Google da Play Store e conta do Astrum são coisas diferentes. Se a tela de login da loja exigir uma confirmação adicional (por exemplo, verificação de segurança), a automação poderá parar antes do cadastro e será preciso concluir essa configuração da conta fora do workflow.
 
 O backend precisa aceitar cadastro usando endereços sintéticos e criação de perfil. O seletor de países consulta `countriesnow.space` e usa a tabela `countries` como fallback, então o emulador precisa de conectividade. Use um backend de QA. O teste não apaga usuários; a limpeza/retenção deve ser configurada no backend de teste sem usar credenciais `service_role` no app ou no Maestro.
 
@@ -24,10 +24,14 @@ Com Maestro CLI e um emulador com Play Store em execução:
 export ASTRUM_APP_ID='app.astrum.mobile'
 export ASTRUM_PLAY_STORE_URL='https://play.google.com/store/apps/details?id=app.astrum.mobile&hl=pt_BR'
 export ASTRUM_TEST_NAME='Astrum QA'
+read -r -p 'Google account email: ' PLAY_STORE_EMAIL
+read -r -s -p 'Google account password: ' PLAY_STORE_PASSWORD
+echo
+export PLAY_STORE_EMAIL PLAY_STORE_PASSWORD
 ./scripts/run-tests.sh
 ```
 
-Não coloque a senha em arquivos versionados. `.env.example` lista as variáveis esperadas sem valores secretos.
+Não coloque credenciais em arquivos versionados nem compartilhe a senha no chat. No GitHub, cadastre-as como Actions secrets. A validação verifica se os valores foram fornecidos e se o e-mail parece válido; apenas um login real pode confirmar se as credenciais estão corretas.
 
 ## CI e privacidade
 

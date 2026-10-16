@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-required=(ASTRUM_APP_ID ASTRUM_PLAY_STORE_URL ASTRUM_TEST_NAME)
+required=(ASTRUM_APP_ID ASTRUM_PLAY_STORE_URL ASTRUM_TEST_NAME PLAY_STORE_EMAIL PLAY_STORE_PASSWORD)
 for name in "${required[@]}"; do
   if [[ -z "${!name:-}" ]]; then
     echo "Required environment variable is missing: $name" >&2
     exit 2
   fi
 done
+
+./scripts/validate-play-store-credentials.sh
 
 # Convert the supplied public listing URL to Android's native Play Store URI.
 store_package="$(python3 -c 'from urllib.parse import urlparse, parse_qs; import os; print(parse_qs(urlparse(os.environ["ASTRUM_PLAY_STORE_URL"]).query).get("id", [""])[0])')"
@@ -27,6 +29,8 @@ set +e
 maestro test \
   -e ASTRUM_APP_ID="$ASTRUM_APP_ID" \
   -e ASTRUM_MARKET_LINK="$ASTRUM_MARKET_LINK" \
+  -e PLAY_STORE_EMAIL="$PLAY_STORE_EMAIL" \
+  -e PLAY_STORE_PASSWORD="$PLAY_STORE_PASSWORD" \
   -e ASTRUM_TEST_EMAIL="$ASTRUM_TEST_EMAIL" \
   -e ASTRUM_TEST_PASSWORD="$ASTRUM_TEST_PASSWORD" \
   -e ASTRUM_TEST_NAME="$ASTRUM_TEST_NAME" \
