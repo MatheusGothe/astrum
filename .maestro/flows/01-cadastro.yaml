@@ -2,16 +2,23 @@ appId: com.android.vending
 name: Cadastro de usuário e acesso autenticado
 ---
 - openLink:
-    link: ${ASTRUM_PLAY_STORE_URL}
+    link: ${ASTRUM_MARKET_LINK}
     autoVerify: true
 - extendedWaitUntil:
-    visible: "^(Install|Instalar)$"
+    visible: "Astrum"
     timeout: 60000
-- tapOn:
-    text: "^(Install|Instalar)$"
 - extendedWaitUntil:
-    visible: "^(Open|Abrir)$"
-    timeout: 180000
+    visible: "^(Install|Instalar|Download|Baixar|Open|Abrir)$"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "^(Install|Instalar|Download|Baixar)$"
+    commands:
+      - tapOn:
+          text: "^(Install|Instalar|Download|Baixar)$"
+      - extendedWaitUntil:
+          visible: "^(Open|Abrir)$"
+          timeout: 180000
 - tapOn:
     text: "^(Open|Abrir)$"
 - extendedWaitUntil:
