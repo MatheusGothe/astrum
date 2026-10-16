@@ -4,13 +4,10 @@ name: Astrum - Android E2E
 on:
   workflow_dispatch:
     inputs:
-      apk_url:
-        description: HTTPS URL of the prebuilt Android APK
-        required: false
-        type: string
-      apk_sha256:
-        description: Expected SHA-256 of the APK (required when apk_url is set)
-        required: false
+      play_store_url:
+        description: Public Google Play listing URL for Astrum
+        required: true
+        default: https://play.google.com/store/apps/details?id=app.astrum.mobile&hl=pt_BR
         type: string
 
 concurrency:
@@ -26,10 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      ASTRUM_APP_ID: ${{ vars.ASTRUM_APP_ID }}
-      ASTRUM_TEST_EMAIL_DOMAIN: ${{ vars.ASTRUM_TEST_EMAIL_DOMAIN }}
-      ASTRUM_TEST_PASSWORD: ${{ secrets.ASTRUM_TEST_PASSWORD }}
-      ASTRUM_TEST_NAME: ${{ vars.ASTRUM_TEST_NAME }}
+      ASTRUM_APP_ID: app.astrum.mobile
+      ASTRUM_TEST_NAME: Astrum QA
+      ASTRUM_PLAY_STORE_URL: ${{ inputs.play_store_url }}
 
     steps:
       - name: Checkout
@@ -42,19 +38,6 @@ jobs:
           nproc
           echo "Memory:"
           free -h
-
-      - name: Download and verify APK
-        env:
-          APK_URL: ${{ inputs.apk_url || secrets.ASTRUM_APK_URL }}
-          APK_SHA256: ${{ inputs.apk_sha256 || secrets.ASTRUM_APK_SHA256 }}
-        run: ./scripts/download-apk.sh
-
-      - name: Require APK configuration
-        run: |
-          if [ ! -f artifacts/astrum.apk ]; then
-            echo "No APK available. Provide workflow_dispatch inputs apk_url and apk_sha256, or configure ASTRUM_APK_URL and ASTRUM_APK_SHA256 secrets." >&2
-            exit 1
-          fi
 
       - name: Install Maestro CLI
         run: |
@@ -83,7 +66,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: google_apis_playstore
           arch: x86_64
           profile: pixel_6
           cores: 2
@@ -92,9 +75,7 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            START=$(date +%s)
-            adb install -r artifacts/astrum.apk
-            echo "APK_INSTALL_SECONDS=$(($(date +%s) - START))" >> "$GITHUB_ENV"
+            adb shell pm uninstall "$ASTRUM_APP_ID" >/dev/null 2>&1 || true
             START=$(date +%s)
             ./scripts/run-tests.sh
             echo "MAESTRO_TEST_SECONDS=$(($(date +%s) - START))" >> "$GITHUB_ENV"
@@ -119,7 +100,7 @@ jobs:
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Runner | ubuntu-24.04 |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Maestro installation | ${MAESTRO_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| APK installation | ${APK_INSTALL_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Play Store installation | included in Maestro flow |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Maestro tests | ${MAESTRO_TEST_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Total execution | ${TOTAL} seconds |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Total minutes | $((TOTAL / 60))m $((TOTAL % 60))s |" >> "$GITHUB_STEP_SUMMARY"

@@ -1,8 +1,26 @@
-appId: ${ASTRUM_APP_ID}
+appId: com.android.vending
 name: Cadastro de usuário e acesso autenticado
 ---
+- openLink:
+    link: ${ASTRUM_PLAY_STORE_URL}
+    autoVerify: true
+- extendedWaitUntil:
+    visible: "^(Install|Instalar)$"
+    timeout: 60000
+- tapOn:
+    text: "^(Install|Instalar)$"
+- extendedWaitUntil:
+    visible: "^(Open|Abrir)$"
+    timeout: 180000
+- tapOn:
+    text: "^(Open|Abrir)$"
+- extendedWaitUntil:
+    visible: "Astrum"
+    timeout: 60000
 - launchApp:
+    appId: ${ASTRUM_APP_ID}
     clearState: true
+- tapOn: "PT"
 - assertVisible:
     text: "Astrum"
 - tapOn:
@@ -34,6 +52,6 @@ name: Cadastro de usuário e acesso autenticado
 - tapOn:
     text: "Criar conta"
 - assertVisible:
-    text: "Conta criada! Você já pode usar o Astrum enquanto confirma seu e-mail."
-- assertVisible:
     text: "Mapa Geral"
+- assertVisible:
+    text: "Perfil"

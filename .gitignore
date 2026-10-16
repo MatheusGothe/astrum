@@ -1,5 +1,4 @@
 .env
 .env.*
 !.env.example
-artifacts/*.apk
 artifacts/maestro-report.xml
