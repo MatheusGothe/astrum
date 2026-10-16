@@ -2,6 +2,7 @@ import ApplicationServices
 import AppKit
 import CoreGraphics
 import Foundation
+import Vision
 
 func stringAttribute(_ element: AXUIElement, _ name: String) -> String? {
     var result: CFTypeRef?
@@ -99,5 +100,41 @@ func dump(_ element: AXUIElement, _ depth: Int) {
 dump(root, 0)
 print("AX_DUMP_NODES=\(visited)")
 if let clickTarget, !targetClicked {
-    print("UI_ACTION_\(clickTarget.uppercased())=button_not_found")
+    print("UI_ACTION_\(clickTarget.uppercased().replacingOccurrences(of: "_ACTION", with: ""))=button_not_found")
+}
+
+if let optionIndex = CommandLine.arguments.firstIndex(of: "--click-visible-get"),
+   CommandLine.arguments.indices.contains(optionIndex + 1) {
+    let imageURL = URL(fileURLWithPath: CommandLine.arguments[optionIndex + 1])
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    do {
+        try VNImageRequestHandler(url: imageURL).perform([request])
+        let observations = request.results ?? []
+        let recognized = observations.compactMap { observation -> (String, CGRect)? in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            return (candidate.string.trimmingCharacters(in: .whitespacesAndNewlines), observation.boundingBox)
+        }
+        guard recognized.contains(where: { $0.0.localizedCaseInsensitiveContains("Astrum") }),
+              let getLabel = recognized.first(where: { $0.0 == "Get" }),
+              let screen = NSScreen.screens.first else {
+            print("UI_ACTION_GET=visible_button_or_astrum_title_not_found")
+            exit(3)
+        }
+        let frame = screen.frame
+        let x = frame.origin.x + getLabel.1.midX * frame.width
+        let y = frame.origin.y + (1 - getLabel.1.midY) * frame.height
+        let point = CGPoint(x: x, y: y)
+        guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else {
+            print("UI_ACTION_GET=mouse_event_failed")
+            exit(4)
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        print("UI_ACTION_GET=clicked_by_ocr_at_\(Int(x)),\(Int(y))")
+    } catch {
+        fputs("OCR failed: \(error)\n", stderr)
+        exit(5)
+    }
 }

@@ -196,17 +196,29 @@ def install_launch() -> None:
                             time.sleep(15)
                             astrum_listing = capture_app_store_ui("astrum-listing")
                             listing_text = str(astrum_listing["accessibility_result"].get("output", ""))
+                            install_clicked = False
                             if re.search(r"^\s*AXButton: (Get|Download|Install|Obter|Baixar|Instalar)$", listing_text, re.MULTILINE):
                                 install_button_result = run(
                                     ["swift", "scripts/dump-app-store-accessibility.swift", "--click-install"],
                                     timeout=25,
                                 )
                                 log_result("Click App Store install button", install_button_result)
-                                if "UI_ACTION_INSTALL=clicked" in str(install_button_result["output"]):
-                                    deadline = time.monotonic() + 90
-                                    while time.monotonic() < deadline and not find_astrum_app():
-                                        time.sleep(3)
-                                    after_install_attempt = capture_app_store_ui("after-install-attempt")
+                                install_clicked = "UI_ACTION_INSTALL=clicked" in str(install_button_result["output"])
+                            else:
+                                install_button_result = run(
+                                    [
+                                        "swift", "scripts/dump-app-store-accessibility.swift",
+                                        "--click-visible-get", "artifacts/app-store-screen-astrum-listing.png",
+                                    ],
+                                    timeout=30,
+                                )
+                                log_result("Click visible Get button using screenshot text", install_button_result)
+                                install_clicked = "UI_ACTION_GET=clicked_by_ocr" in str(install_button_result["output"])
+                            if install_clicked:
+                                deadline = time.monotonic() + 60
+                                while time.monotonic() < deadline and not find_astrum_app():
+                                    time.sleep(3)
+                                after_install_attempt = capture_app_store_ui("after-install-attempt")
     ui_diagnostics = {
         "before_retry": before_retry, "retry": retry_result, "after_retry": after_retry,
         "continue": continue_result, "after_continue": after_continue,
