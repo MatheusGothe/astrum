@@ -1,0 +1,88 @@
+
+name: Astrum - Android Setup Benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-setup:
+    name: Install Maestro and Android Emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start benchmark
+        run: |
+          echo "BENCHMARK_START=$(date +%s)" >> "$GITHUB_ENV"
+          echo "Runner CPU:"
+          nproc
+          echo "Memory:"
+          free -h
+
+      - name: Install Maestro CLI
+        run: |
+          START=$(date +%s)
+
+          curl -Ls https://get.maestro.mobile.dev | bash
+
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+          END=$(date +%s)
+          echo "MAESTRO_SECONDS=$((END - START))" >> "$GITHUB_ENV"
+
+      - name: Verify Maestro
+        run: |
+          maestro --version
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and boot Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            echo "Android emulator started successfully"
+
+            adb devices
+
+            adb shell getprop sys.boot_completed
+
+            adb shell getprop ro.build.version.release
+
+            echo "Maestro version:"
+            maestro --version
+
+      - name: Benchmark results
+        if: always()
+        run: |
+          END=$(date +%s)
+          TOTAL=$((END - BENCHMARK_START))
+
+          echo "## Android Setup Benchmark" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner | ubuntu-24.04 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Maestro installation | ${MAESTRO_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total execution | ${TOTAL} seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total minutes | $((TOTAL / 60))m $((TOTAL % 60))s |" >> "$GITHUB_STEP_SUMMARY"
