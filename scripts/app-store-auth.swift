@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import ImageIO
 import Vision
 
 func getAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
@@ -21,11 +22,8 @@ func children(_ element: AXUIElement) -> [AXUIElement] {
     (getAttribute(element, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
 }
 
-guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.AppStore").first else {
-    fputs("App Store process not found\n", stderr)
-    exit(2)
-}
-let root = AXUIElementCreateApplication(app.processIdentifier)
+let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.AppStore").first
+let root = app.map { AXUIElementCreateApplication($0.processIdentifier) }
 
 func walk(_ element: AXUIElement, _ visit: (AXUIElement) -> Void) {
     visit(element)
@@ -34,21 +32,31 @@ func walk(_ element: AXUIElement, _ visit: (AXUIElement) -> Void) {
 
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-fields" {
     let path = CommandLine.arguments[2]
-    guard let image = NSImage(contentsOfFile: path),
-          let bitmap = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()),
-          let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+    let url = URL(fileURLWithPath: path)
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
         fputs("Could not load screenshot for redaction\n", stderr)
         exit(3)
     }
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = context
-    context.imageInterpolation = .high
-    let imageWidth = CGFloat(bitmap.pixelsWide)
-    let imageHeight = CGFloat(bitmap.pixelsHigh)
+    let imageWidth = image.width
+    let imageHeight = image.height
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    var pixels = [UInt8](repeating: 0, count: imageWidth * imageHeight * 4)
+    let context = pixels.withUnsafeMutableBytes { bytes -> CGContext? in
+        guard let base = bytes.baseAddress else { return nil }
+        return CGContext(data: base, width: imageWidth, height: imageHeight, bitsPerComponent: 8,
+                         bytesPerRow: imageWidth * 4, space: colorSpace,
+                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+    guard let context else {
+        fputs("Could not create screenshot redaction context\n", stderr)
+        exit(3)
+    }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
     let ocr = VNRecognizeTextRequest()
     ocr.recognitionLevel = .accurate
     do {
-        try VNImageRequestHandler(url: URL(fileURLWithPath: path)).perform([ocr])
+        try VNImageRequestHandler(cgImage: image).perform([ocr])
     } catch {
         fputs("Could not inspect screenshot for sensitive text\n", stderr)
         exit(3)
@@ -56,11 +64,12 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
     for observation in ocr.results ?? [] {
         guard let recognized = observation.topCandidates(1).first?.string, recognized.contains("@") else { continue }
         let box = observation.boundingBox.insetBy(dx: -0.012, dy: -0.008)
-        NSColor.black.setFill()
-        NSBezierPath(rect: NSRect(x: box.minX * imageWidth, y: box.minY * imageHeight,
-                                  width: box.width * imageWidth, height: box.height * imageHeight)).fill()
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: box.minX * CGFloat(imageWidth), y: box.minY * CGFloat(imageHeight),
+                            width: box.width * CGFloat(imageWidth), height: box.height * CGFloat(imageHeight)))
     }
-    walk(root) { element in
+    if let root {
+      walk(root) { element in
         let elementRole = role(element)
         let label = [
             getAttribute(element, kAXTitleAttribute as String) as? String,
@@ -76,21 +85,28 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
         var point = CGPoint.zero
         var size = CGSize.zero
         guard AXValueGetValue(positionValue, .cgPoint, &point), AXValueGetValue(sizeValue, .cgSize, &size) else { return }
-        NSColor.black.setFill()
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
         // Also cover accessible input frames; OCR masking above independently catches visible email text.
-        NSBezierPath(rect: NSRect(x: point.x, y: imageHeight - point.y - size.height, width: size.width, height: size.height)).fill()
+        context.fill(CGRect(x: point.x, y: CGFloat(imageHeight) - point.y - size.height,
+                            width: size.width, height: size.height))
+      }
     }
-    do {
-        try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path), options: .atomic)
-    } catch {
+    guard let redactedImage = context.makeImage(),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+        fputs("Could not encode redacted screenshot\n", stderr)
+        exit(3)
+    }
+    CGImageDestinationAddImage(destination, redactedImage, nil)
+    guard CGImageDestinationFinalize(destination) else {
         fputs("Could not save redacted screenshot\n", stderr)
         exit(3)
     }
-    NSGraphicsContext.restoreGraphicsState()
     let verify = VNRecognizeTextRequest()
     verify.recognitionLevel = .accurate
     do {
-        try VNImageRequestHandler(url: URL(fileURLWithPath: path)).perform([verify])
+        guard let redactedSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let redacted = CGImageSourceCreateImageAtIndex(redactedSource, 0, nil) else { throw NSError(domain: "redaction", code: 4) }
+        try VNImageRequestHandler(cgImage: redacted).perform([verify])
     } catch {
         fputs("Could not verify screenshot redaction\n", stderr)
         exit(4)
@@ -103,6 +119,10 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
     exit(0)
 }
 
+guard let app, let root else {
+    fputs("App Store process not found\n", stderr)
+    exit(2)
+}
 guard CommandLine.arguments.count == 2 else {
     fputs("Usage: app-store-auth.swift --email|--password\n", stderr)
     exit(2)

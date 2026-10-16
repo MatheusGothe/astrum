@@ -86,19 +86,22 @@ def capture_app_store_ui(stage: str) -> dict[str, object]:
     accessibility_dump = artifact_dir / f"app-store-accessibility-{stage}.txt"
 
     screenshot_result = run(["screencapture", "-x", str(screenshot)], timeout=15)
-    redaction_result = run(
-        ["swift", "scripts/app-store-auth.swift", "--redact-fields", str(screenshot)], timeout=30
-    )
-    log_result("Redact App Store credential fields from screenshot", redaction_result)
-    if redaction_result["returncode"] != 0:
-        screenshot.unlink(missing_ok=True)
+    if stage == "after-install-attempt":
+        redaction_result = run(
+            ["swift", "scripts/app-store-auth.swift", "--redact-fields", str(screenshot)], timeout=30
+        )
+        log_result("Redact App Store credential fields from screenshot", redaction_result)
+        if redaction_result["returncode"] != 0:
+            screenshot.unlink(missing_ok=True)
+    else:
+        redaction_result = {"returncode": 0, "output": "Not needed before Apple Account credentials are entered", "seconds": 0}
     tree_result = run(["swift", "scripts/dump-app-store-accessibility.swift"], timeout=25)
     tree_text = re.sub(
         r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]", str(tree_result["output"])
     )
     accessibility_dump.write_text(tree_text + "\n", encoding="utf-8")
     log_result("App Store visible accessibility text", tree_result)
-    print(f"App Store screenshot: {screenshot} (exit {screenshot_result['returncode']})")
+    print(f"App Store screenshot: {screenshot if screenshot.exists() else 'omitted because redaction failed'} (exit {screenshot_result['returncode']})")
     return {
         "screenshot": str(screenshot), "screenshot_result": screenshot_result,
         "screenshot_redaction_result": redaction_result,
@@ -370,7 +373,7 @@ def summary() -> None:
                 handle.write(f"**`mas install` output:** `{mas_result.get('output')}`  \n")
         if isinstance(store_result, dict):
             handle.write(f"**Mac App Store UI probe:** `{store_result.get('output', 'not run')}`\n")
-        handle.write("\nNo Apple ID credentials, simulators, emulators, or app builds were used. Full command evidence is in the job log.\n")
+        handle.write("\nThe Apple Account email and password were submitted from Actions secrets; secret values are not included in logs. No verification code was supplied. Full command evidence is in the job log.\n")
     print(verdict)
 
 
