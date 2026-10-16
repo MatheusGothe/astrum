@@ -64,7 +64,8 @@ func dump(_ element: AXUIElement, _ depth: Int) {
     let role = stringAttribute(element, kAXRoleAttribute as String) ?? "?"
     let title = stringAttribute(element, kAXTitleAttribute as String)
     let description = stringAttribute(element, kAXDescriptionAttribute as String)
-    let value = stringAttribute(element, kAXValueAttribute as String)
+    let isInputField = role == (kAXTextFieldRole as String) || role == "AXSecureTextField"
+    let value = isInputField ? nil : stringAttribute(element, kAXValueAttribute as String)
     let label = [title, description, value]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
@@ -73,7 +74,8 @@ func dump(_ element: AXUIElement, _ depth: Int) {
         .replacingOccurrences(of: "\t", with: " ")
 
     if !label.isEmpty || role == (kAXButtonRole as String) || role == (kAXTextFieldRole as String) {
-        print("\(String(repeating: "  ", count: depth))\(role)\(label.isEmpty ? "" : ": " + label)")
+        let safeLabel = isInputField ? "[value hidden]" : label
+        print("\(String(repeating: "  ", count: depth))\(role)\(safeLabel.isEmpty ? "" : ": " + safeLabel)")
     }
 
     let installLabels = ["Get", "Download", "Install", "Obter", "Baixar", "Instalar"]

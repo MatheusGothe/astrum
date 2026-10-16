@@ -86,6 +86,10 @@ def capture_app_store_ui(stage: str) -> dict[str, object]:
     accessibility_dump = artifact_dir / f"app-store-accessibility-{stage}.txt"
 
     screenshot_result = run(["screencapture", "-x", str(screenshot)], timeout=15)
+    redaction_result = run(
+        ["swift", "scripts/app-store-auth.swift", "--redact-fields", str(screenshot)], timeout=30
+    )
+    log_result("Redact App Store credential fields from screenshot", redaction_result)
     tree_result = run(["swift", "scripts/dump-app-store-accessibility.swift"], timeout=25)
     tree_text = re.sub(
         r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]", str(tree_result["output"])
@@ -95,8 +99,24 @@ def capture_app_store_ui(stage: str) -> dict[str, object]:
     print(f"App Store screenshot: {screenshot} (exit {screenshot_result['returncode']})")
     return {
         "screenshot": str(screenshot), "screenshot_result": screenshot_result,
+        "screenshot_redaction_result": redaction_result,
         "accessibility_dump": str(accessibility_dump), "accessibility_result": tree_result,
     }
+
+
+def attempt_app_store_sign_in() -> dict[str, object]:
+    """Submit Apple Account credentials without logging or recording field values."""
+    if not os.environ.get("APP_STORE_APPLE_ID") or not os.environ.get("APP_STORE_APPLE_PASSWORD"):
+        return {"result": "credentials_missing"}
+
+    email = run(["swift", "scripts/app-store-auth.swift", "--email"], timeout=35)
+    log_result("Submit Apple Account email", email)
+    time.sleep(8)
+    password = run(["swift", "scripts/app-store-auth.swift", "--password"], timeout=35)
+    log_result("Submit Apple Account password", password)
+    if "password_submitted" in str(password.get("output", "")):
+        time.sleep(15)
+    return {"email": email, "password": password}
 
 
 def inspect() -> None:
@@ -164,6 +184,7 @@ def install_launch() -> None:
     astrum_listing: dict[str, object] | None = None
     install_button_result: dict[str, object] | None = None
     after_install_attempt: dict[str, object] | None = None
+    apple_account_sign_in: dict[str, object] | None = None
     visible_text = str(before_retry["accessibility_result"].get("output", ""))
     if "Cannot Connect" in visible_text and "Retry" in visible_text:
         retry_result = run(["swift", "scripts/dump-app-store-accessibility.swift", "--click-retry"], timeout=25)
@@ -215,6 +236,7 @@ def install_launch() -> None:
                                 log_result("Click visible Get button using screenshot text", install_button_result)
                                 install_clicked = "UI_ACTION_GET=clicked_by_ocr" in str(install_button_result["output"])
                             if install_clicked:
+                                apple_account_sign_in = attempt_app_store_sign_in()
                                 deadline = time.monotonic() + 60
                                 while time.monotonic() < deadline and not find_astrum_app():
                                     time.sleep(3)
@@ -225,6 +247,7 @@ def install_launch() -> None:
         "not_now": not_now_result, "after_not_now": after_not_now,
         "listing_open": listing_open_result, "astrum_listing": astrum_listing,
         "install_button": install_button_result, "after_install_attempt": after_install_attempt,
+        "apple_account_sign_in": apple_account_sign_in,
     }
 
     app_path = find_astrum_app()
