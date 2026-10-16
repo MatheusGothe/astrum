@@ -1,0 +1,61 @@
+name: Astrum native macOS feasibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: astrum-native-macos-poc-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-macos-poc:
+    name: Install, launch, and inspect Astrum on macOS
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - name: Start timing
+        run: echo "POC_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inspect macOS runner and GUI
+        id: inspect
+        run: python3 scripts/test-astrum-macos.py inspect
+
+      - name: Prepare and inspect mas
+        id: mas
+        continue-on-error: true
+        run: |
+          START=$(date +%s)
+          if ! command -v mas >/dev/null 2>&1; then
+            brew install mas
+          fi
+          mas --version
+          echo "seconds=$(($(date +%s) - START))" >> "$GITHUB_OUTPUT"
+
+      - name: Attempt official App Store install and native launch
+        id: app
+        run: python3 scripts/test-astrum-macos.py install-launch
+
+      - name: Probe native UI automation
+        id: ui
+        if: steps.app.outputs.app_found == 'true'
+        run: python3 scripts/test-astrum-macos.py ui-probe
+
+      - name: Write feasibility summary
+        if: always()
+        env:
+          INSPECT_SECONDS: ${{ steps.inspect.outputs.seconds }}
+          MAS_SECONDS: ${{ steps.mas.outputs.seconds }}
+          INSTALL_SECONDS: ${{ steps.app.outputs.install_seconds }}
+          GUI_INSTALL_SECONDS: ${{ steps.app.outputs.gui_install_seconds }}
+          LAUNCH_SECONDS: ${{ steps.app.outputs.launch_seconds }}
+          UI_SECONDS: ${{ steps.ui.outputs.seconds }}
+          APP_FOUND: ${{ steps.app.outputs.app_found }}
+          APP_LAUNCHED: ${{ steps.app.outputs.app_launched }}
+          UI_RESULT: ${{ steps.ui.outputs.result }}
+        run: python3 scripts/test-astrum-macos.py summary

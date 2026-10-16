@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 artifacts/maestro-report.xml
+artifacts/macos-poc.json
+scripts/__pycache__/
