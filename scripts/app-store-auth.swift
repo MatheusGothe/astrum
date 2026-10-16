@@ -70,14 +70,15 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
     }
     if let root {
       walk(root) { element in
-        let elementRole = role(element)
         let label = [
             getAttribute(element, kAXTitleAttribute as String) as? String,
             getAttribute(element, kAXDescriptionAttribute as String) as? String,
             getAttribute(element, kAXValueAttribute as String) as? String,
         ].compactMap { $0 }.joined(separator: " ")
-        let isInput = elementRole == (kAXTextFieldRole as String) || elementRole == "AXSecureTextField"
-        guard isInput || label.contains("@") else { return }
+        let isSecure = subrole(element) == "AXSecureTextField"
+        let fieldValue = getAttribute(element, kAXValueAttribute as String) as? String ?? ""
+        let containsCredential = isSecure || !fieldValue.isEmpty
+        guard containsCredential || label.contains("@") else { return }
         guard let positionObject = getAttribute(element, kAXPositionAttribute as String),
               let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return }
         let positionValue = positionObject as! AXValue
@@ -155,11 +156,53 @@ guard let input = fields.max(by: { verticalPosition($0) < verticalPosition($1) }
     print("AUTH_RESULT=field_not_present; stage=\(mode == "--email" ? "email" : "password_or_2fa")")
     exit(4)
 }
-let setResult = AXUIElementSetAttributeValue(input, kAXValueAttribute as CFString, value as CFTypeRef)
-guard setResult == .success else {
-    print("AUTH_RESULT=field_set_failed; code=\(setResult.rawValue)")
+
+func click(_ point: CGPoint) -> Bool {
+    guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+          let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else { return false }
+    down.post(tap: .cghidEventTap)
+    up.post(tap: .cghidEventTap)
+    return true
+}
+
+func postUnicode(_ text: String) {
+    let units = Array(text.utf16)
+    for start in stride(from: 0, to: units.count, by: 16) {
+        let chunk = Array(units[start..<min(start + 16, units.count)])
+        chunk.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress,
+                  let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else { return }
+            down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: base)
+            up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: base)
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+        }
+    }
+}
+
+guard let positionObject = getAttribute(input, kAXPositionAttribute as String),
+      let sizeObject = getAttribute(input, kAXSizeAttribute as String) else {
+    print("AUTH_RESULT=field_position_unavailable")
     exit(5)
 }
+var fieldPoint = CGPoint.zero
+var fieldSize = CGSize.zero
+guard AXValueGetValue(positionObject as! AXValue, .cgPoint, &fieldPoint),
+      AXValueGetValue(sizeObject as! AXValue, .cgSize, &fieldSize),
+      click(CGPoint(x: fieldPoint.x + fieldSize.width / 2, y: fieldPoint.y + fieldSize.height / 2)) else {
+    print("AUTH_RESULT=field_focus_failed")
+    exit(5)
+}
+Thread.sleep(forTimeInterval: 0.3)
+let selectAllDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x00, keyDown: true)
+selectAllDown?.flags = .maskCommand
+selectAllDown?.post(tap: .cghidEventTap)
+let selectAllUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x00, keyDown: false)
+selectAllUp?.flags = .maskCommand
+selectAllUp?.post(tap: .cghidEventTap)
+postUnicode(value)
+Thread.sleep(forTimeInterval: 0.7)
 let valueConfirmed = (getAttribute(input, kAXValueAttribute as String) as? String) == value
 print("AUTH_FIELD_VALUE_CONFIRMED=\(valueConfirmed)")
 if emailMode && !valueConfirmed {
@@ -186,6 +229,8 @@ func press(_ element: AXUIElement) -> Bool {
 var clicked = false
 for name in preferred where !clicked {
     for button in buttons where (getAttribute(button, kAXTitleAttribute as String) as? String) == name {
+        let enabled = getAttribute(button, kAXEnabledAttribute as String) as? Bool
+        if enabled == false { continue }
         if press(button) { clicked = true; break }
     }
 }
