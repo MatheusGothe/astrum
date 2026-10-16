@@ -68,30 +68,6 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
         context.fill(CGRect(x: box.minX * CGFloat(imageWidth), y: box.minY * CGFloat(imageHeight),
                             width: box.width * CGFloat(imageWidth), height: box.height * CGFloat(imageHeight)))
     }
-    if let root {
-      walk(root) { element in
-        let label = [
-            getAttribute(element, kAXTitleAttribute as String) as? String,
-            getAttribute(element, kAXDescriptionAttribute as String) as? String,
-            getAttribute(element, kAXValueAttribute as String) as? String,
-        ].compactMap { $0 }.joined(separator: " ")
-        let isSecure = subrole(element) == "AXSecureTextField"
-        let fieldValue = getAttribute(element, kAXValueAttribute as String) as? String ?? ""
-        let containsCredential = isSecure || !fieldValue.isEmpty
-        guard containsCredential || label.contains("@") else { return }
-        guard let positionObject = getAttribute(element, kAXPositionAttribute as String),
-              let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return }
-        let positionValue = positionObject as! AXValue
-        let sizeValue = sizeObject as! AXValue
-        var point = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(positionValue, .cgPoint, &point), AXValueGetValue(sizeValue, .cgSize, &size) else { return }
-        context.setFillColor(CGColor(gray: 0, alpha: 1))
-        // Also cover accessible input frames; OCR masking above independently catches visible email text.
-        context.fill(CGRect(x: point.x, y: CGFloat(imageHeight) - point.y - size.height,
-                            width: size.width, height: size.height))
-      }
-    }
     guard let redactedImage = context.makeImage(),
           let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
         fputs("Could not encode redacted screenshot\n", stderr)
@@ -211,7 +187,6 @@ if emailMode && !valueConfirmed {
 }
 let preferred = mode == "--email" ? ["Continue", "Sign In", "Sign in", "Entrar"] : ["Sign In", "Sign in", "Entrar"]
 func press(_ element: AXUIElement) -> Bool {
-    if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success { return true }
     guard let positionObject = getAttribute(element, kAXPositionAttribute as String),
           let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return false }
     var point = CGPoint.zero
