@@ -22,8 +22,9 @@ let root = AXUIElementCreateApplication(app.processIdentifier)
 var visited = 0
 let maxNodes = 2500
 let maxDepth = 14
-let shouldClickRetry = CommandLine.arguments.contains("--click-retry")
-var retryClicked = false
+let clickTarget: String? = CommandLine.arguments.contains("--click-retry") ? "Retry" :
+    (CommandLine.arguments.contains("--click-continue") ? "Continue" : nil)
+var targetClicked = false
 
 func dump(_ element: AXUIElement, _ depth: Int) {
     guard visited < maxNodes, depth <= maxDepth else { return }
@@ -44,11 +45,11 @@ func dump(_ element: AXUIElement, _ depth: Int) {
         print("\(String(repeating: "  ", count: depth))\(role)\(label.isEmpty ? "" : ": " + label)")
     }
 
-    if shouldClickRetry, !retryClicked, role == (kAXButtonRole as String),
-       [title, description, value].compactMap({ $0 }).contains(where: { $0 == "Retry" }) {
+    if let clickTarget, !targetClicked, role == (kAXButtonRole as String),
+       [title, description, value].compactMap({ $0 }).contains(where: { $0 == clickTarget }) {
         let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-        retryClicked = result == .success
-        print("RETRY_ACTION=\(result == .success ? "clicked" : "failed_\(result.rawValue)")")
+        targetClicked = result == .success
+        print("UI_ACTION_\(clickTarget.uppercased())=\(result == .success ? "clicked" : "failed_\(result.rawValue)")")
     }
 
     var childrenResult: CFTypeRef?
@@ -62,6 +63,6 @@ func dump(_ element: AXUIElement, _ depth: Int) {
 
 dump(root, 0)
 print("AX_DUMP_NODES=\(visited)")
-if shouldClickRetry && !retryClicked {
-    print("RETRY_ACTION=button_not_found")
+if let clickTarget, !targetClicked {
+    print("UI_ACTION_\(clickTarget.uppercased())=button_not_found")
 }

@@ -156,6 +156,8 @@ def install_launch() -> None:
     before_retry = capture_app_store_ui("before-retry")
     retry_result: dict[str, object] | None = None
     after_retry: dict[str, object] | None = None
+    continue_result: dict[str, object] | None = None
+    after_continue: dict[str, object] | None = None
     visible_text = str(before_retry["accessibility_result"].get("output", ""))
     if "Cannot Connect" in visible_text and "Retry" in visible_text:
         retry_result = run(["swift", "scripts/dump-app-store-accessibility.swift", "--click-retry"], timeout=25)
@@ -163,7 +165,20 @@ def install_launch() -> None:
         if "RETRY_ACTION=clicked" in str(retry_result["output"]):
             time.sleep(15)
             after_retry = capture_app_store_ui("after-retry")
-    ui_diagnostics = {"before_retry": before_retry, "retry": retry_result, "after_retry": after_retry}
+            retry_text = str(after_retry["accessibility_result"].get("output", ""))
+            if "AXButton: Continue" in retry_text:
+                continue_result = run(
+                    ["swift", "scripts/dump-app-store-accessibility.swift", "--click-continue"],
+                    timeout=25,
+                )
+                log_result("Continue past App Store welcome screen", continue_result)
+                if "UI_ACTION_CONTINUE=clicked" in str(continue_result["output"]):
+                    time.sleep(10)
+                    after_continue = capture_app_store_ui("after-continue")
+    ui_diagnostics = {
+        "before_retry": before_retry, "retry": retry_result, "after_retry": after_retry,
+        "continue": continue_result, "after_continue": after_continue,
+    }
 
     app_path = find_astrum_app()
     if not app_path and "download_button_clicked" in str(gui_install["output"]):
