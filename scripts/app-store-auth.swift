@@ -144,12 +144,14 @@ walk(root) { element in
     if isTextField && (emailMode ? !isSecure : isSecure) { fields.append(element) }
     if role(element) == (kAXButtonRole as String) { buttons.append(element) }
 }
-func width(_ element: AXUIElement) -> CGFloat {
-    guard let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return 0 }
-    var size = CGSize.zero
-    return AXValueGetValue(sizeObject as! AXValue, .cgSize, &size) ? size.width : 0
+func verticalPosition(_ element: AXUIElement) -> CGFloat {
+    guard let positionObject = getAttribute(element, kAXPositionAttribute as String) else { return -1 }
+    var point = CGPoint.zero
+    return AXValueGetValue(positionObject as! AXValue, .cgPoint, &point) ? point.y : -1
 }
-guard let input = fields.max(by: { width($0) < width($1) }) else {
+// The App Store search box is also an AXTextField. The credential field is in
+// the centered sign-in sheet, lower on screen than the search box.
+guard let input = fields.max(by: { verticalPosition($0) < verticalPosition($1) }) else {
     print("AUTH_RESULT=field_not_present; stage=\(mode == "--email" ? "email" : "password_or_2fa")")
     exit(4)
 }
@@ -157,6 +159,12 @@ let setResult = AXUIElementSetAttributeValue(input, kAXValueAttribute as CFStrin
 guard setResult == .success else {
     print("AUTH_RESULT=field_set_failed; code=\(setResult.rawValue)")
     exit(5)
+}
+let valueConfirmed = (getAttribute(input, kAXValueAttribute as String) as? String) == value
+print("AUTH_FIELD_VALUE_CONFIRMED=\(valueConfirmed)")
+if emailMode && !valueConfirmed {
+    print("AUTH_RESULT=email_field_value_not_confirmed; refusing_to_submit")
+    exit(7)
 }
 let preferred = mode == "--email" ? ["Continue", "Sign In", "Sign in", "Entrar"] : ["Sign In", "Sign in", "Entrar"]
 func press(_ element: AXUIElement) -> Bool {
