@@ -202,13 +202,40 @@ func press(_ element: AXUIElement) -> Bool {
     return true
 }
 var clicked = false
-for name in preferred where !clicked {
-    for button in buttons where (getAttribute(button, kAXTitleAttribute as String) as? String) == name {
-        let enabled = getAttribute(button, kAXEnabledAttribute as String) as? Bool
-        if enabled == false { continue }
-        if press(button) { clicked = true; break }
+let loginProbe = FileManager.default.temporaryDirectory.appendingPathComponent("app-store-sign-in-\(UUID().uuidString).png")
+let screenshotProcess = Process()
+screenshotProcess.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+screenshotProcess.arguments = ["-x", loginProbe.path]
+if (try? screenshotProcess.run()) != nil {
+    screenshotProcess.waitUntilExit()
+}
+defer { try? FileManager.default.removeItem(at: loginProbe) }
+if screenshotProcess.terminationStatus == 0,
+   let source = CGImageSourceCreateWithURL(loginProbe as CFURL, nil),
+   let screenImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    if (try? VNImageRequestHandler(cgImage: screenImage).perform([request])) != nil,
+       let signIn = (request.results ?? []).first(where: { observation in
+           guard let label = observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+           return preferred.contains(label)
+       }), let screen = NSScreen.screens.first {
+        let frame = screen.frame
+        let point = CGPoint(x: frame.origin.x + signIn.boundingBox.midX * frame.width,
+                            y: frame.origin.y + (1 - signIn.boundingBox.midY) * frame.height)
+        clicked = click(point)
     }
 }
+if !clicked {
+    for name in preferred where !clicked {
+        for button in buttons where (getAttribute(button, kAXTitleAttribute as String) as? String) == name {
+            let enabled = getAttribute(button, kAXEnabledAttribute as String) as? Bool
+            if enabled == false { continue }
+            if press(button) { clicked = true; break }
+        }
+    }
+}
+try? FileManager.default.removeItem(at: loginProbe)
 guard clicked else {
     print("AUTH_RESULT=submit_button_not_found")
     exit(6)
