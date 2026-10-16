@@ -158,6 +158,12 @@ def install_launch() -> None:
     after_retry: dict[str, object] | None = None
     continue_result: dict[str, object] | None = None
     after_continue: dict[str, object] | None = None
+    not_now_result: dict[str, object] | None = None
+    after_not_now: dict[str, object] | None = None
+    listing_open_result: dict[str, object] | None = None
+    astrum_listing: dict[str, object] | None = None
+    install_button_result: dict[str, object] | None = None
+    after_install_attempt: dict[str, object] | None = None
     visible_text = str(before_retry["accessibility_result"].get("output", ""))
     if "Cannot Connect" in visible_text and "Retry" in visible_text:
         retry_result = run(["swift", "scripts/dump-app-store-accessibility.swift", "--click-retry"], timeout=25)
@@ -175,9 +181,38 @@ def install_launch() -> None:
                 if "UI_ACTION_CONTINUE=clicked" in str(continue_result["output"]):
                     time.sleep(10)
                     after_continue = capture_app_store_ui("after-continue")
+                    continue_text = str(after_continue["accessibility_result"].get("output", ""))
+                    if "AXStaticText: Not Now" in continue_text:
+                        not_now_result = run(
+                            ["swift", "scripts/dump-app-store-accessibility.swift", "--click-not-now"],
+                            timeout=25,
+                        )
+                        log_result("Dismiss App Store notifications prompt", not_now_result)
+                        if "UI_ACTION_NOT NOW=clicked" in str(not_now_result["output"]):
+                            time.sleep(5)
+                            after_not_now = capture_app_store_ui("after-not-now")
+                            listing_open_result = run(["open", "-a", str(store_path), APP_STORE_URL], timeout=20)
+                            log_result("Open Astrum listing after first-run prompts", listing_open_result)
+                            time.sleep(15)
+                            astrum_listing = capture_app_store_ui("astrum-listing")
+                            listing_text = str(astrum_listing["accessibility_result"].get("output", ""))
+                            if re.search(r"^\s*AXButton: (Get|Download|Install|Obter|Baixar|Instalar)$", listing_text, re.MULTILINE):
+                                install_button_result = run(
+                                    ["swift", "scripts/dump-app-store-accessibility.swift", "--click-install"],
+                                    timeout=25,
+                                )
+                                log_result("Click App Store install button", install_button_result)
+                                if "UI_ACTION_INSTALL=clicked" in str(install_button_result["output"]):
+                                    deadline = time.monotonic() + 90
+                                    while time.monotonic() < deadline and not find_astrum_app():
+                                        time.sleep(3)
+                                    after_install_attempt = capture_app_store_ui("after-install-attempt")
     ui_diagnostics = {
         "before_retry": before_retry, "retry": retry_result, "after_retry": after_retry,
         "continue": continue_result, "after_continue": after_continue,
+        "not_now": not_now_result, "after_not_now": after_not_now,
+        "listing_open": listing_open_result, "astrum_listing": astrum_listing,
+        "install_button": install_button_result, "after_install_attempt": after_install_attempt,
     }
 
     app_path = find_astrum_app()
