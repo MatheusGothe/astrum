@@ -141,44 +141,12 @@ func click(_ point: CGPoint) -> Bool {
     return true
 }
 
-func postUnicode(_ text: String) {
-    let units = Array(text.utf16)
-    for start in stride(from: 0, to: units.count, by: 16) {
-        let chunk = Array(units[start..<min(start + 16, units.count)])
-        chunk.withUnsafeBufferPointer { buffer in
-            guard let base = buffer.baseAddress,
-                  let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else { return }
-            down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: base)
-            up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: base)
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
-        }
-    }
-}
-
-guard let positionObject = getAttribute(input, kAXPositionAttribute as String),
-      let sizeObject = getAttribute(input, kAXSizeAttribute as String) else {
-    print("AUTH_RESULT=field_position_unavailable")
+let setResult = AXUIElementSetAttributeValue(input, kAXValueAttribute as CFString, value as CFTypeRef)
+guard setResult == .success else {
+    print("AUTH_RESULT=field_set_failed; code=\(setResult.rawValue)")
     exit(5)
 }
-var fieldPoint = CGPoint.zero
-var fieldSize = CGSize.zero
-guard AXValueGetValue(positionObject as! AXValue, .cgPoint, &fieldPoint),
-      AXValueGetValue(sizeObject as! AXValue, .cgSize, &fieldSize),
-      click(CGPoint(x: fieldPoint.x + fieldSize.width / 2, y: fieldPoint.y + fieldSize.height / 2)) else {
-    print("AUTH_RESULT=field_focus_failed")
-    exit(5)
-}
-Thread.sleep(forTimeInterval: 0.3)
-let selectAllDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x00, keyDown: true)
-selectAllDown?.flags = .maskCommand
-selectAllDown?.post(tap: .cghidEventTap)
-let selectAllUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x00, keyDown: false)
-selectAllUp?.flags = .maskCommand
-selectAllUp?.post(tap: .cghidEventTap)
-postUnicode(value)
-Thread.sleep(forTimeInterval: 0.7)
+Thread.sleep(forTimeInterval: 0.5)
 let valueConfirmed = (getAttribute(input, kAXValueAttribute as String) as? String) == value
 print("AUTH_FIELD_VALUE_CONFIRMED=\(valueConfirmed)")
 if emailMode && !valueConfirmed {
@@ -218,7 +186,8 @@ if screenshotProcess.terminationStatus == 0,
     if (try? VNImageRequestHandler(cgImage: screenImage).perform([request])) != nil,
        let signIn = (request.results ?? []).first(where: { observation in
            guard let label = observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
-           return preferred.contains(label)
+           return preferred.contains(label) && observation.boundingBox.midX > 0.55 &&
+               observation.boundingBox.midY > 0.35 && observation.boundingBox.midY < 0.65
        }), let screen = NSScreen.screens.first {
         let frame = screen.frame
         let point = CGPoint(x: frame.origin.x + signIn.boundingBox.midX * frame.width,
