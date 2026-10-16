@@ -1,0 +1,39 @@
+appId: ${ASTRUM_APP_ID}
+name: Cadastro de usuário e acesso autenticado
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: "Astrum"
+- tapOn:
+    text: "Não tem conta? Cadastre-se"
+- assertVisible:
+    text: "Nome"
+- tapOn:
+    text: "Seu nome"
+- inputText: ${ASTRUM_TEST_NAME}
+- tapOn:
+    text: "seu@email.com"
+- inputText: ${ASTRUM_TEST_EMAIL}
+- tapOn:
+    text: "••••••••"
+- inputText: ${ASTRUM_TEST_PASSWORD}
+- scrollUntilVisible:
+    element:
+      text: "Sexo"
+    direction: DOWN
+- tapOn:
+    text: "Prefiro não dizer"
+- tapOn:
+    text: "Selecione seu país"
+- extendedWaitUntil:
+    visible: "Brasil"
+    timeout: 20000
+- tapOn:
+    text: "Brasil"
+- tapOn:
+    text: "Criar conta"
+- assertVisible:
+    text: "Conta criada! Você já pode usar o Astrum enquanto confirma seu e-mail."
+- assertVisible:
+    text: "Mapa Geral"

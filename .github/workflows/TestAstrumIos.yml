@@ -1,17 +1,35 @@
 
-name: Astrum - Android Setup Benchmark
+name: Astrum - Android E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      apk_url:
+        description: HTTPS URL of the prebuilt Android APK
+        required: false
+        type: string
+      apk_sha256:
+        description: Expected SHA-256 of the APK (required when apk_url is set)
+        required: false
+        type: string
+
+concurrency:
+  group: astrum-android-e2e-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   android-setup:
-    name: Install Maestro and Android Emulator
+    name: Astrum Android E2E
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      ASTRUM_APP_ID: ${{ vars.ASTRUM_APP_ID }}
+      ASTRUM_TEST_EMAIL_DOMAIN: ${{ vars.ASTRUM_TEST_EMAIL_DOMAIN }}
+      ASTRUM_TEST_PASSWORD: ${{ secrets.ASTRUM_TEST_PASSWORD }}
+      ASTRUM_TEST_NAME: ${{ vars.ASTRUM_TEST_NAME }}
 
     steps:
       - name: Checkout
@@ -24,6 +42,19 @@ jobs:
           nproc
           echo "Memory:"
           free -h
+
+      - name: Download and verify APK
+        env:
+          APK_URL: ${{ inputs.apk_url || secrets.ASTRUM_APK_URL }}
+          APK_SHA256: ${{ inputs.apk_sha256 || secrets.ASTRUM_APK_SHA256 }}
+        run: ./scripts/download-apk.sh
+
+      - name: Require APK configuration
+        run: |
+          if [ ! -f artifacts/astrum.apk ]; then
+            echo "No APK available. Provide workflow_dispatch inputs apk_url and apk_sha256, or configure ASTRUM_APK_URL and ASTRUM_APK_SHA256 secrets." >&2
+            exit 1
+          fi
 
       - name: Install Maestro CLI
         run: |
@@ -61,16 +92,20 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            echo "Android emulator started successfully"
+            START=$(date +%s)
+            adb install -r artifacts/astrum.apk
+            echo "APK_INSTALL_SECONDS=$(($(date +%s) - START))" >> "$GITHUB_ENV"
+            START=$(date +%s)
+            ./scripts/run-tests.sh
+            echo "MAESTRO_TEST_SECONDS=$(($(date +%s) - START))" >> "$GITHUB_ENV"
 
-            adb devices
-
-            adb shell getprop sys.boot_completed
-
-            adb shell getprop ro.build.version.release
-
-            echo "Maestro version:"
-            maestro --version
+      - name: Upload Maestro JUnit report
+        if: always() && hashFiles('artifacts/maestro-report.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report
+          path: artifacts/maestro-report.xml
+          retention-days: 7
 
       - name: Benchmark results
         if: always()
@@ -84,5 +119,7 @@ jobs:
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Runner | ubuntu-24.04 |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Maestro installation | ${MAESTRO_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| APK installation | ${APK_INSTALL_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Maestro tests | ${MAESTRO_TEST_SECONDS:-N/A} seconds |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Total execution | ${TOTAL} seconds |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Total minutes | $((TOTAL / 60))m $((TOTAL % 60))s |" >> "$GITHUB_STEP_SUMMARY"
