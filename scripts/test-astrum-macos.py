@@ -90,6 +90,10 @@ def inspect() -> None:
         "osascript", "-e",
         'tell application "System Events" to get name of first process',
     ], timeout=15)
+    accessibility_trust = run([
+        "swift", "-e",
+        'import ApplicationServices; print(AXIsProcessTrusted() ? "trusted" : "not_trusted")',
+    ], timeout=30)
     STATE["environment"] = {
         "macos_version": os_version["output"], "build": build["output"],
         "architecture": platform.machine(), "user": os.environ.get("USER", "unknown"),
@@ -98,6 +102,7 @@ def inspect() -> None:
         "window_server_running": run(["pgrep", "-x", "WindowServer"])["returncode"] == 0,
         "app_store_present": store_path.exists(),
         "accessibility_probe": accessibility,
+        "accessibility_trusted": accessibility_trust["output"],
         "osascript_available": shutil.which("osascript") is not None,
         "mas_preinstalled": shutil.which("mas") is not None,
     }
@@ -222,6 +227,7 @@ def summary() -> None:
 
     rows = [
         ("macOS / architecture / GUI / App Store", f"{env.get('macos_version', 'N/A')} / {architecture} / GUI={env.get('gui_session', 'N/A')} / App Store={env.get('app_store_present', 'N/A')}"),
+        ("Accessibility API permission", str(env.get("accessibility_trusted", "N/A"))),
         ("Environment inspection", f"{os.environ.get('INSPECT_SECONDS', 'N/A')}s"),
         ("mas preparation", f"{os.environ.get('MAS_SECONDS', 'N/A')}s"),
         ("App Store download + install attempt", f"{os.environ.get('INSTALL_SECONDS', 'N/A')}s"),
