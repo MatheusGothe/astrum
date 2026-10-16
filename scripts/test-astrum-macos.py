@@ -90,6 +90,8 @@ def capture_app_store_ui(stage: str) -> dict[str, object]:
         ["swift", "scripts/app-store-auth.swift", "--redact-fields", str(screenshot)], timeout=30
     )
     log_result("Redact App Store credential fields from screenshot", redaction_result)
+    if redaction_result["returncode"] != 0:
+        screenshot.unlink(missing_ok=True)
     tree_result = run(["swift", "scripts/dump-app-store-accessibility.swift"], timeout=25)
     tree_text = re.sub(
         r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]", str(tree_result["output"])

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import Vision
 
 func getAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
     var value: CFTypeRef?
@@ -42,7 +43,23 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = context
     context.imageInterpolation = .high
+    let imageWidth = CGFloat(bitmap.pixelsWide)
     let imageHeight = CGFloat(bitmap.pixelsHigh)
+    let ocr = VNRecognizeTextRequest()
+    ocr.recognitionLevel = .accurate
+    do {
+        try VNImageRequestHandler(url: URL(fileURLWithPath: path)).perform([ocr])
+    } catch {
+        fputs("Could not inspect screenshot for sensitive text\n", stderr)
+        exit(3)
+    }
+    for observation in ocr.results ?? [] {
+        guard let recognized = observation.topCandidates(1).first?.string, recognized.contains("@") else { continue }
+        let box = observation.boundingBox.insetBy(dx: -0.012, dy: -0.008)
+        NSColor.black.setFill()
+        NSBezierPath(rect: NSRect(x: box.minX * imageWidth, y: box.minY * imageHeight,
+                                  width: box.width * imageWidth, height: box.height * imageHeight)).fill()
+    }
     walk(root) { element in
         let elementRole = role(element)
         let label = [
@@ -60,6 +77,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
         var size = CGSize.zero
         guard AXValueGetValue(positionValue, .cgPoint, &point), AXValueGetValue(sizeValue, .cgSize, &size) else { return }
         NSColor.black.setFill()
+        // Also cover accessible input frames; OCR masking above independently catches visible email text.
         NSBezierPath(rect: NSRect(x: point.x, y: imageHeight - point.y - size.height, width: size.width, height: size.height)).fill()
     }
     do {
@@ -69,6 +87,18 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--redact-field
         exit(3)
     }
     NSGraphicsContext.restoreGraphicsState()
+    let verify = VNRecognizeTextRequest()
+    verify.recognitionLevel = .accurate
+    do {
+        try VNImageRequestHandler(url: URL(fileURLWithPath: path)).perform([verify])
+    } catch {
+        fputs("Could not verify screenshot redaction\n", stderr)
+        exit(4)
+    }
+    if (verify.results ?? []).contains(where: { $0.topCandidates(1).first?.string.contains("@") == true }) {
+        fputs("Sensitive text remains visible; refusing screenshot artifact\n", stderr)
+        exit(5)
+    }
     print("SCREENSHOT_FIELDS_REDACTED=true")
     exit(0)
 }
@@ -86,15 +116,20 @@ guard (mode == "--email" || mode == "--password"),
     exit(2)
 }
 
-var field: AXUIElement?
+var fields: [AXUIElement] = []
 var buttons: [AXUIElement] = []
 walk(root) { element in
     let isTextField = role(element) == (kAXTextFieldRole as String)
     let isSecure = subrole(element) == "AXSecureTextField"
-    if field == nil && isTextField && (emailMode ? !isSecure : isSecure) { field = element }
+    if isTextField && (emailMode ? !isSecure : isSecure) { fields.append(element) }
     if role(element) == (kAXButtonRole as String) { buttons.append(element) }
 }
-guard let input = field else {
+func width(_ element: AXUIElement) -> CGFloat {
+    guard let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return 0 }
+    var size = CGSize.zero
+    return AXValueGetValue(sizeObject as! AXValue, .cgSize, &size) ? size.width : 0
+}
+guard let input = fields.max(by: { width($0) < width($1) }) else {
     print("AUTH_RESULT=field_not_present; stage=\(mode == "--email" ? "email" : "password_or_2fa")")
     exit(4)
 }
@@ -104,10 +139,26 @@ guard setResult == .success else {
     exit(5)
 }
 let preferred = mode == "--email" ? ["Continue", "Sign In", "Sign in", "Entrar"] : ["Sign In", "Sign in", "Entrar"]
+func press(_ element: AXUIElement) -> Bool {
+    if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success { return true }
+    guard let positionObject = getAttribute(element, kAXPositionAttribute as String),
+          let sizeObject = getAttribute(element, kAXSizeAttribute as String) else { return false }
+    var point = CGPoint.zero
+    var size = CGSize.zero
+    guard AXValueGetValue(positionObject as! AXValue, .cgPoint, &point),
+          AXValueGetValue(sizeObject as! AXValue, .cgSize, &size),
+          let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
+                             mouseCursorPosition: CGPoint(x: point.x + size.width / 2, y: point.y + size.height / 2), mouseButton: .left),
+          let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                           mouseCursorPosition: CGPoint(x: point.x + size.width / 2, y: point.y + size.height / 2), mouseButton: .left) else { return false }
+    down.post(tap: .cghidEventTap)
+    up.post(tap: .cghidEventTap)
+    return true
+}
 var clicked = false
 for name in preferred where !clicked {
     for button in buttons where (getAttribute(button, kAXTitleAttribute as String) as? String) == name {
-        if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success { clicked = true; break }
+        if press(button) { clicked = true; break }
     }
 }
 guard clicked else {
