@@ -162,7 +162,7 @@ def install_launch() -> None:
     if "Cannot Connect" in visible_text and "Retry" in visible_text:
         retry_result = run(["swift", "scripts/dump-app-store-accessibility.swift", "--click-retry"], timeout=25)
         log_result("Retry App Store page load", retry_result)
-        if "RETRY_ACTION=clicked" in str(retry_result["output"]):
+        if "UI_ACTION_RETRY=clicked" in str(retry_result["output"]):
             time.sleep(15)
             after_retry = capture_app_store_ui("after-retry")
             retry_text = str(after_retry["accessibility_result"].get("output", ""))
