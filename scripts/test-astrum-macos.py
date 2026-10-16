@@ -79,11 +79,11 @@ def find_astrum_app() -> str | None:
     return next((candidate for candidate in candidates if pathlib.Path(candidate).exists()), None)
 
 
-def capture_app_store_ui() -> dict[str, object]:
-    ARTIFACT_DIR = pathlib.Path("artifacts")
-    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    screenshot = ARTIFACT_DIR / "app-store-screen.png"
-    accessibility_dump = ARTIFACT_DIR / "app-store-accessibility.txt"
+def capture_app_store_ui(stage: str) -> dict[str, object]:
+    artifact_dir = pathlib.Path("artifacts")
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    screenshot = artifact_dir / f"app-store-screen-{stage}.png"
+    accessibility_dump = artifact_dir / f"app-store-accessibility-{stage}.txt"
 
     screenshot_result = run(["screencapture", "-x", str(screenshot)], timeout=15)
     tree_result = run(["swift", "scripts/dump-app-store-accessibility.swift"], timeout=25)
@@ -153,7 +153,17 @@ def install_launch() -> None:
     gui_install_start = time.monotonic()
     gui_install = run(["osascript", "scripts/probe-mac-app-store.applescript"], timeout=35)
     log_result("App Store GUI download-button probe", gui_install)
-    ui_diagnostics = capture_app_store_ui()
+    before_retry = capture_app_store_ui("before-retry")
+    retry_result: dict[str, object] | None = None
+    after_retry: dict[str, object] | None = None
+    visible_text = str(before_retry["accessibility_result"].get("output", ""))
+    if "Cannot Connect" in visible_text and "Retry" in visible_text:
+        retry_result = run(["swift", "scripts/dump-app-store-accessibility.swift", "--click-retry"], timeout=25)
+        log_result("Retry App Store page load", retry_result)
+        if "RETRY_ACTION=clicked" in str(retry_result["output"]):
+            time.sleep(15)
+            after_retry = capture_app_store_ui("after-retry")
+    ui_diagnostics = {"before_retry": before_retry, "retry": retry_result, "after_retry": after_retry}
 
     app_path = find_astrum_app()
     if not app_path and "download_button_clicked" in str(gui_install["output"]):

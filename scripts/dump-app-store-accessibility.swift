@@ -22,6 +22,8 @@ let root = AXUIElementCreateApplication(app.processIdentifier)
 var visited = 0
 let maxNodes = 2500
 let maxDepth = 14
+let shouldClickRetry = CommandLine.arguments.contains("--click-retry")
+var retryClicked = false
 
 func dump(_ element: AXUIElement, _ depth: Int) {
     guard visited < maxNodes, depth <= maxDepth else { return }
@@ -42,6 +44,13 @@ func dump(_ element: AXUIElement, _ depth: Int) {
         print("\(String(repeating: "  ", count: depth))\(role)\(label.isEmpty ? "" : ": " + label)")
     }
 
+    if shouldClickRetry, !retryClicked, role == (kAXButtonRole as String),
+       [title, description, value].compactMap({ $0 }).contains(where: { $0 == "Retry" }) {
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        retryClicked = result == .success
+        print("RETRY_ACTION=\(result == .success ? "clicked" : "failed_\(result.rawValue)")")
+    }
+
     var childrenResult: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenResult) == .success,
           let children = childrenResult as? [AXUIElement] else { return }
@@ -53,3 +62,6 @@ func dump(_ element: AXUIElement, _ depth: Int) {
 
 dump(root, 0)
 print("AX_DUMP_NODES=\(visited)")
+if shouldClickRetry && !retryClicked {
+    print("RETRY_ACTION=button_not_found")
+}

@@ -47,13 +47,11 @@ jobs:
         run: python3 scripts/test-astrum-macos.py ui-probe
 
       - name: Upload App Store accessibility diagnostics
-        if: always() && hashFiles('artifacts/app-store-screen.png', 'artifacts/app-store-accessibility.txt') != ''
+        if: always() && hashFiles('artifacts/app-store-*') != ''
         uses: actions/upload-artifact@v4
         with:
           name: app-store-ui-diagnostics
-          path: |
-            artifacts/app-store-screen.png
-            artifacts/app-store-accessibility.txt
+          path: artifacts/app-store-*
           retention-days: 7
 
       - name: Write feasibility summary
