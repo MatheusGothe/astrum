@@ -79,6 +79,26 @@ def find_astrum_app() -> str | None:
     return next((candidate for candidate in candidates if pathlib.Path(candidate).exists()), None)
 
 
+def capture_app_store_ui() -> dict[str, object]:
+    ARTIFACT_DIR = pathlib.Path("artifacts")
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    screenshot = ARTIFACT_DIR / "app-store-screen.png"
+    accessibility_dump = ARTIFACT_DIR / "app-store-accessibility.txt"
+
+    screenshot_result = run(["screencapture", "-x", str(screenshot)], timeout=15)
+    tree_result = run(["swift", "scripts/dump-app-store-accessibility.swift"], timeout=25)
+    tree_text = re.sub(
+        r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]", str(tree_result["output"])
+    )
+    accessibility_dump.write_text(tree_text + "\n", encoding="utf-8")
+    log_result("App Store visible accessibility text", tree_result)
+    print(f"App Store screenshot: {screenshot} (exit {screenshot_result['returncode']})")
+    return {
+        "screenshot": str(screenshot), "screenshot_result": screenshot_result,
+        "accessibility_dump": str(accessibility_dump), "accessibility_result": tree_result,
+    }
+
+
 def inspect() -> None:
     started = time.monotonic()
     os_version = run(["sw_vers", "-productVersion"])
@@ -133,6 +153,7 @@ def install_launch() -> None:
     gui_install_start = time.monotonic()
     gui_install = run(["osascript", "scripts/probe-mac-app-store.applescript"], timeout=35)
     log_result("App Store GUI download-button probe", gui_install)
+    ui_diagnostics = capture_app_store_ui()
 
     app_path = find_astrum_app()
     if not app_path and "download_button_clicked" in str(gui_install["output"]):
@@ -172,6 +193,7 @@ def install_launch() -> None:
     STATE["installation"] = {
         "app_store_id": APP_STORE_ID, "app_store_open": store_open,
         "app_store_gui_probe": gui_install, "app_store_gui_install_seconds": gui_install_seconds,
+        "app_store_ui_diagnostics": ui_diagnostics,
         "mas_lookup": lookup, "mas_install": install,
         "app_found": bool(app_path), "app": app_info,
     }
